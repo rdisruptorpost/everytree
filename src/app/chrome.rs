@@ -8,22 +8,22 @@ pub(super) fn set_style(ctx: &egui::Context) {
     style.visuals.extreme_bg_color = BG;
     style.visuals.override_text_color = Some(TEXT);
     style.visuals.selection.bg_fill = Color32::from_rgb(72, 60, 46);
-    style.visuals.selection.stroke = Stroke::new(1.0, ACCENT);
-    style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
-    style.visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, MUTED);
+    style.visuals.selection.stroke = Stroke::new(1.0_f32, ACCENT);
+    style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, BORDER);
+    style.visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0_f32, MUTED);
     for widget in [
         &mut style.visuals.widgets.inactive,
         &mut style.visuals.widgets.hovered,
         &mut style.visuals.widgets.active,
     ] {
         widget.corner_radius = 5.into();
-        widget.bg_stroke = Stroke::new(1.0, BORDER);
+        widget.bg_stroke = Stroke::new(1.0_f32, BORDER);
     }
     style.visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(36, 40, 43);
     style.visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(47, 52, 55);
-    style.visuals.widgets.hovered.bg_stroke = Stroke::new(1.0, Color32::from_rgb(85, 92, 94));
+    style.visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(85, 92, 94));
     style.visuals.widgets.active.weak_bg_fill = Color32::from_rgb(59, 53, 44);
-    style.visuals.widgets.active.bg_stroke = Stroke::new(1.0, ACCENT);
+    style.visuals.widgets.active.bg_stroke = Stroke::new(1.0_f32, ACCENT);
     style.spacing.item_spacing = vec2(8.0, 8.0);
     style.spacing.button_padding = vec2(10.0, 6.0);
     style.spacing.interact_size.y = 28.0;
@@ -122,13 +122,13 @@ impl App {
                 }).inner;
                 if ui.place(about, IconButton::new(Icon::Info, "About").quiet()).clicked() { self.help = true; }
                 ui.painter().rect_filled(search, 5, PANEL);
-                ui.painter().rect_stroke(search, 5, Stroke::new(1.0, BORDER), StrokeKind::Inside);
+                ui.painter().rect_stroke(search, 5, Stroke::new(1.0_f32, BORDER), StrokeKind::Inside);
                 Icon::Search.paint(ui.painter(), Rect::from_center_size(pos2(search.left() + 18.0, search.center().y), vec2(16.0, 16.0)), MUTED);
                 let text_rect = Rect::from_min_max(search.min + vec2(36.0, 9.0), search.max - vec2(10.0, 9.0));
                 let search_ui = ui.place(text_rect, egui::TextEdit::singleline(&mut self.query).frame(false).margin(0).hint_text("Search Everything \u{00b7} all indexed files"))
                     .on_hover_text("Everything search syntax: C:\\Users\\, ext:mp4, or any search query. Leave blank for all indexed files.");
                 if search_ui.has_focus() {
-                    ui.painter().rect_stroke(search, 5, Stroke::new(1.0, ACCENT), StrokeKind::Inside);
+                    ui.painter().rect_stroke(search, 5, Stroke::new(1.0_f32, ACCENT), StrokeKind::Inside);
                 }
                 let enter = search_ui.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 if (enter || load_clicked) && self.job.is_none() { self.start(ctx, Source::Everything(self.query.clone())); }

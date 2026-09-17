@@ -176,7 +176,7 @@ impl egui::Widget for IconButton<'_> {
         if self.primary {
             button = button
                 .fill(Color32::from_rgb(75, 59, 43))
-                .stroke(Stroke::new(1.0, Color32::from_rgb(111, 82, 52)));
+                .stroke(Stroke::new(1.0_f32, Color32::from_rgb(111, 82, 52)));
         }
         let response = button.atom_ui(ui);
         if let Some(rect) = response.rect(id) {

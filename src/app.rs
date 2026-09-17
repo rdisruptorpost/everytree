@@ -408,7 +408,7 @@ impl App {
                 .iter()
                 .position(|t| matches!(t.kind, TileKind::Entry(id) if id == selected))
         });
-        for (index, width) in [(selected_tile, 2.0), (hovered, 1.0)] {
+        for (index, width) in [(selected_tile, 2.0_f32), (hovered, 1.0_f32)] {
             if let Some(index) = index {
                 painter.rect_stroke(
                     cache.layout.tiles[index].rect,

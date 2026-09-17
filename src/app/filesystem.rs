@@ -168,7 +168,7 @@ impl App {
         }
         p.line_segment(
             [header.left_bottom(), header.right_bottom()],
-            Stroke::new(1.0, Color32::from_rgb(49, 54, 56)),
+            Stroke::new(1.0_f32, Color32::from_rgb(49, 54, 56)),
         );
         let mut scroll = egui::ScrollArea::vertical()
             .id_salt("file-tree-rows")

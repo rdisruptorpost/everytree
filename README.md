@@ -24,7 +24,7 @@ A native Rust/egui disk explorer powered by the running [Everything](https://www
 
 ## Build from source
 
-Requires Windows x64, a recent Rust MSVC toolchain (Rust 1.88+), and the Visual C++ build tools / Windows SDK.
+Requires Windows x64, Rust installed through rustup, and the Visual C++ build tools / Windows SDK. `rust-toolchain.toml` pins Rust 1.98.1 (with rustfmt and Clippy) for local and CI builds; rustup installs and selects it automatically when you run Cargo in this repository.
 
 ```powershell
 .\scripts\setup.ps1
@@ -43,7 +43,7 @@ The folder/treemap icon is embedded in the executable and supplied to the app wi
 
 ## CI and GitHub releases
 
-The **CI** workflow runs on branch pushes and pull requests. It checks formatting, runs Clippy with warnings treated as errors, runs the release tests, and builds a portable Windows x64 ZIP. The GPU preview test stays opt-in; the automated tests do not need Everything running. The Windows runner supplies the Visual C++ tools and Windows SDK; the workflow installs Rust stable and the build script downloads the official Everything SDK.
+The **CI** workflow runs on branch pushes and pull requests. It checks formatting, runs Clippy with warnings treated as errors, runs the release tests, and builds a portable Windows x64 ZIP. The GPU preview test stays opt-in; the automated tests do not need Everything running. The Windows runner supplies the Visual C++ tools and Windows SDK; the workflow installs the Rust version pinned in `rust-toolchain.toml` and the build script downloads the official Everything SDK. Update that file deliberately when upgrading the compiler; the build cache is separated by toolchain version.
 
 You can also select **Actions > CI > Run workflow** to build a branch manually. Download the `everytree-windows-x64` artifact from the completed run; it contains the portable ZIP and its SHA-256 checksum. Build artifacts are retained for 14 days.
 

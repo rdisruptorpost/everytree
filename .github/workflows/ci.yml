@@ -50,17 +50,12 @@ jobs:
           $version = & ./scripts/version.ps1 -ExpectedTag $env:EXPECTED_TAG
           "version=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Install Rust stable with Windows MSVC tools
+      - name: Install the repository's pinned Rust toolchain
         run: |
-          rustup update stable --no-self-update
-          if ($LASTEXITCODE -ne 0) { throw 'Rust update failed.' }
-          rustup default stable
-          if ($LASTEXITCODE -ne 0) { throw 'Rust toolchain selection failed.' }
-          rustup component add rustfmt clippy
-          if ($LASTEXITCODE -ne 0) { throw 'Rust component installation failed.' }
-          rustup target add x86_64-pc-windows-msvc
-          if ($LASTEXITCODE -ne 0) { throw 'Rust target installation failed.' }
-          rustc --version
+          rustup show active-toolchain
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned Rust toolchain installation failed.' }
+          rustc --version --verbose
+          if ($LASTEXITCODE -ne 0) { throw 'Rust compiler verification failed.' }
 
       - name: Cache Rust dependencies and build outputs
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -70,9 +65,9 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: windows-x64-rust-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          key: windows-x64-rust-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
-            windows-x64-rust-${{ hashFiles('Cargo.lock') }}-
+            windows-x64-rust-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('Cargo.lock') }}-
 
       - name: Format, lint, test, and package
         env:
