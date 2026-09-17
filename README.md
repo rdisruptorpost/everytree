@@ -41,27 +41,6 @@ The build script runs release tests, builds explicitly for Windows x64/MSVC, and
 
 The folder/treemap icon is embedded in the executable and supplied to the app window. A standalone `everytree.ico` is included for shortcuts. The Windows SDK resource compiler is detected automatically; set `RC` to its `rc.exe` path for a custom installation. Packaged artwork and its generation prompt live in [assets/README.md](assets/README.md); Python/Pillow are only needed when regenerating the icon assets.
 
-## CI and GitHub releases
-
-The **CI** workflow runs on branch pushes and pull requests. It checks formatting, runs Clippy with warnings treated as errors, runs the release tests, and builds a portable Windows x64 ZIP. The GPU preview test stays opt-in; the automated tests do not need Everything running. The Windows runner supplies the Visual C++ tools and Windows SDK; the workflow installs the Rust version pinned in `rust-toolchain.toml` and the build script downloads the official Everything SDK. Update that file deliberately when upgrading the compiler; the build cache is separated by toolchain version.
-
-You can also select **Actions > CI > Run workflow** to build a branch manually. Download the `everytree-windows-x64` artifact from the completed run; it contains the portable ZIP and its SHA-256 checksum. Build artifacts are retained for 14 days.
-
-After committing and pushing the project to GitHub, publish the current version with:
-
-```powershell
-git tag v0.3.6
-git push origin v0.3.6
-```
-
-The **Release** workflow requires the tag to match `package.version` in `Cargo.toml` exactly (`v` followed by the version). It runs the same Windows CI checks, verifies the ZIP checksum, and publishes a GitHub Release containing the ZIP and checksum with automatically generated release notes. Versions such as `0.4.0-beta.1` produce prereleases. The built-in `GITHUB_TOKEN` is used; no personal token or repository secret is needed. Only the publishing job receives `contents: write` permission.
-
-For later releases, update the version in `Cargo.toml`, run `cargo check` to refresh the package entry in `Cargo.lock`, and run `.\scripts\build.ps1 -Check`. Commit and push those changes before creating the matching tag. Treat published version tags as fixed; fixes should receive a new version. A failed run can be retried from Actions before its release is published.
-
-If repository or organization policy disables Actions or prevents release creation, enable it for these workflows. The repository must contain these workflow files before the version tag is pushed.
-
-To use a downloaded release, extract the whole portable ZIP and run `everytree.exe`, keeping `Everything64.dll` beside it. Start the Everything desktop client and enable **Tools > Options > Indexes > Index file size**. Builds are currently unsigned.
-
 ## Dependencies
 
 The Everything SDK is supplied by voidtools; consult its bundled source headers for its license. Application code is MIT licensed. Rust dependency versions are pinned in `Cargo.lock`.
