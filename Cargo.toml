@@ -1,6 +1,6 @@
 [package]
 name = "everytree"
-version = "0.3.6"
+version = "0.3.8"
 edition = "2024"
 description = "A GPU-rendered disk explorer powered by the Everything index"
 license = "MIT"
