@@ -27,6 +27,169 @@ fn fixture() -> App {
     }
 }
 
+/// Fictional creative-workstation data for the README; no filesystem access.
+fn readme_fixture() -> App {
+    let mut builder = model::Builder::new(160_000);
+    let groups: &[(&str, u64, usize, &[&str])] = &[
+        (
+            r"D:\Projects\Aurora\Footage\Camera A",
+            520,
+            360,
+            &["crm", "mov", "mp4"],
+        ),
+        (
+            r"D:\Projects\Aurora\Footage\Camera B",
+            340,
+            240,
+            &["mov", "crm", "wav"],
+        ),
+        (
+            r"D:\Projects\Aurora\Renders\Final",
+            280,
+            12_000,
+            &["exr", "png", "exr"],
+        ),
+        (
+            r"D:\Projects\Aurora\Renders\Previews",
+            90,
+            96,
+            &["mp4", "mov"],
+        ),
+        (
+            r"D:\Projects\Aurora\Scenes",
+            75,
+            220,
+            &["blend", "abc", "fbx"],
+        ),
+        (
+            r"D:\Projects\Tidal\Footage",
+            410,
+            420,
+            &["mov", "mp4", "crm"],
+        ),
+        (
+            r"D:\Projects\Tidal\Simulations",
+            260,
+            3_200,
+            &["vdb", "abc", "bin"],
+        ),
+        (
+            r"D:\Projects\Tidal\Textures",
+            125,
+            8_600,
+            &["exr", "tif", "png", "jpg"],
+        ),
+        (
+            r"D:\Projects\Orbit\Renders",
+            320,
+            14_400,
+            &["exr", "png", "mov"],
+        ),
+        (
+            r"D:\Projects\Orbit\Scenes",
+            95,
+            380,
+            &["blend", "fbx", "usd"],
+        ),
+        (
+            r"D:\Asset Library\Megascans\Surfaces",
+            290,
+            9_800,
+            &["tif", "exr", "jpg"],
+        ),
+        (
+            r"D:\Asset Library\Megascans\3D Assets",
+            180,
+            2_800,
+            &["fbx", "obj", "png"],
+        ),
+        (
+            r"D:\Asset Library\Kitbash\Architecture",
+            145,
+            640,
+            &["blend", "fbx", "zip"],
+        ),
+        (r"D:\Asset Library\HDRI", 60, 460, &["hdr", "exr"]),
+        (r"D:\Backups\Projects\2026", 470, 72, &["zip", "7z", "tar"]),
+        (r"D:\Backups\Workstation", 280, 180, &["7z", "zip", "bak"]),
+        (r"D:\Media\Documentary", 225, 320, &["mkv", "mp4", "mov"]),
+        (
+            r"D:\Media\Photography\RAW",
+            155,
+            7_200,
+            &["cr3", "dng", "jpg"],
+        ),
+        (r"D:\Media\Audio", 58, 4_200, &["wav", "flac", "mp3"]),
+        (
+            r"C:\Users\Demo\Documents\Projects",
+            82,
+            18_000,
+            &["rs", "ts", "json", "dll"],
+        ),
+        (
+            r"C:\Users\Demo\AppData\Local\Packages",
+            72,
+            15_000,
+            &["dll", "bin", "db"],
+        ),
+        (
+            r"C:\Users\Demo\AppData\Local\Cache",
+            95,
+            21_000,
+            &["bin", "dat", "db"],
+        ),
+        (
+            r"C:\Users\Demo\Downloads",
+            64,
+            880,
+            &["zip", "exe", "pdf", "mp4"],
+        ),
+        (r"C:\Users\Demo\Virtual Machines", 135, 5, &["vhdx", "vdi"]),
+        (
+            r"C:\Program Files\Creative Tools",
+            90,
+            14_000,
+            &["dll", "exe", "pak"],
+        ),
+        (r"C:\Windows\WinSxS", 38, 12_000, &["dll", "exe", "dat"]),
+    ];
+    let mut seed = 0x1234_5678_9abc_def0u64;
+    for &(path, gib, count, extensions) in groups {
+        let folder = builder.folder(path).unwrap();
+        let stem = path.rsplit('\\').next().unwrap().replace(' ', "_");
+        let average = gib * 1024 * 1024 * 1024 / count as u64;
+        for index in 0..count {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            let bytes = average * (seed % 1_000 + 1) / 500;
+            let extension = extensions[index % extensions.len()];
+            builder
+                .add_file(
+                    folder,
+                    &format!("{stem}_{index:05}.{extension}"),
+                    Some(bytes),
+                )
+                .unwrap();
+        }
+    }
+    let selected = builder.folder(r"D:\Projects\Aurora").unwrap();
+    let mut data = builder
+        .finish(&AtomicBool::new(false), |_, _, _| {})
+        .unwrap();
+    data.synthetic = true;
+    data.source = "Synthetic / creative workstation".into();
+    let data = Arc::new(data);
+    let mut app = fixture();
+    app.tree = Tree::new(&data);
+    app.view = Some(View::folder(&data, ROOT));
+    app.select_entry(&data, selected, false);
+    app.tree.reveal(&data, selected);
+    app.tree.toggle(&data, selected);
+    app.data = Some(data);
+    app
+}
+
 fn loading(app: &mut App, stage: &str, done: usize, total: usize) {
     let (_, rx) = mpsc::channel();
     app.job = Some(Job {
@@ -105,6 +268,7 @@ fn render_ui_previews() {
             .unwrap();
         std::fs::create_dir_all("artifacts/ui").unwrap();
         for (name, width, height, scale, state) in [
+            ("readme", 1600, 1050, 1.0, 8),
             ("ready", 1400, 900, 1.0, 0),
             ("compact", 940, 600, 1.0, 0),
             ("loading", 1400, 900, 1.0, 1),
@@ -119,11 +283,17 @@ fn render_ui_previews() {
         ] {
             let ctx = egui::Context::default();
             chrome::set_style(&ctx);
-            let mut app = fixture();
+            let mut app = if state == 8 {
+                readme_fixture()
+            } else {
+                fixture()
+            };
             let mut tooltip_target = None;
             let data = app.data.clone().unwrap();
             let selected = data.children[data.node(ROOT).child_start as usize];
-            app.select_entry(&data, selected, true);
+            if state != 8 {
+                app.select_entry(&data, selected, true);
+            }
             match state {
                 1 => loading(&mut app, "Building the file hierarchy", 8_500_000, 10_105_524),
                 2 => { loading(&mut app, "Counting indexed files", 0, 0); app.data = None; },

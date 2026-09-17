@@ -30,6 +30,7 @@ try {
         "target\$target\release\everytree.exe",
         'vendor\everything-sdk\dll\Everything64.dll',
         'README.md',
+        'screenshot.png',
         'BENCHMARKS.md',
         'LICENSE',
         'THIRD_PARTY_NOTICES.txt',

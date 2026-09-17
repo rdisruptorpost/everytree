@@ -2,6 +2,8 @@
 
 A native Rust/egui disk explorer powered by the running [Everything](https://www.voidtools.com/) desktop client. The treemap is rendered by egui through wgpu, navigation and hovering never scan the full file index.
 
+![everytree showing a folder tree, selected folder details, and a colourful disk-usage treemap](assets/screenshot.png)
+
 ## Usage
 
 - Double-click a folder or grouped treemap region to drill in.
