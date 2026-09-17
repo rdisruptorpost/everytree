@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      expected-tag:
+        description: Release tag that must match Cargo.toml
+        required: false
+        default: ''
+        type: string
+    outputs:
+      version:
+        description: Validated Cargo package version
+        value: ${{ jobs.windows.outputs.version }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+jobs:
+  windows:
+    name: Windows x64 checks and portable build
+    runs-on: windows-2022
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate version
+        id: version
+        env:
+          EXPECTED_TAG: ${{ inputs.expected-tag }}
+        run: |
+          $version = & ./scripts/version.ps1 -ExpectedTag $env:EXPECTED_TAG
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Install Rust stable with Windows MSVC tools
+        run: |
+          rustup update stable --no-self-update
+          if ($LASTEXITCODE -ne 0) { throw 'Rust update failed.' }
+          rustup default stable
+          if ($LASTEXITCODE -ne 0) { throw 'Rust toolchain selection failed.' }
+          rustup component add rustfmt clippy
+          if ($LASTEXITCODE -ne 0) { throw 'Rust component installation failed.' }
+          rustup target add x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw 'Rust target installation failed.' }
+          rustc --version
+
+      - name: Cache Rust dependencies and build outputs
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: windows-x64-rust-${{ hashFiles('Cargo.lock') }}-${{ github.sha }}
+          restore-keys: |
+            windows-x64-rust-${{ hashFiles('Cargo.lock') }}-
+
+      - name: Format, lint, test, and package
+        env:
+          EXPECTED_TAG: ${{ inputs.expected-tag }}
+        run: ./scripts/build.ps1 -Check -ExpectedTag $env:EXPECTED_TAG
+
+      - name: Upload portable Windows build
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: everytree-windows-x64
+          path: |
+            dist/everytree-${{ steps.version.outputs.version }}-windows-x64.zip
+            dist/everytree-${{ steps.version.outputs.version }}-windows-x64.zip.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
