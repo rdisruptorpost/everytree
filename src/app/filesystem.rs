@@ -261,7 +261,7 @@ impl App {
                             size_x,
                         ),
                         (format!("{percentage:.1}%"), share_x),
-                        (format_count(n.file_count as usize), files_x),
+                        (format_count(data.file_count(id) as usize), files_x),
                     ];
                     for (value, x) in values {
                         ui.painter().text(
@@ -344,7 +344,10 @@ impl App {
                     };
                     ui.label(RichText::new(kind).color(MUTED));
                     if node.is_dir() {
-                        ui.label(format!("{} files", format_count(node.file_count as usize)));
+                        ui.label(format!(
+                            "{} files",
+                            format_count(data.file_count(id) as usize)
+                        ));
                     }
                 });
                 ui.add(
@@ -363,9 +366,7 @@ impl App {
                         ui.label(
                             RichText::new(format!(
                                 "· {} sibling entries",
-                                format_count(
-                                    data.node(parent).child_count.saturating_sub(1) as usize
-                                )
+                                format_count(data.child_ids(parent).len().saturating_sub(1))
                             ))
                             .size(12.0)
                             .color(MUTED),

@@ -439,7 +439,7 @@ impl App {
                         if data.node(id).is_dir() {
                             ui.small(format!(
                                 "{} files",
-                                format_count(data.node(id).file_count as usize)
+                                format_count(data.file_count(id) as usize)
                             ));
                         }
                     }

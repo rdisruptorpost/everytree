@@ -139,7 +139,7 @@ fn split(
             rect.max - vec2(inset, inset),
         );
         if node.is_dir()
-            && node.child_count > 0
+            && !data.child_ids(id).is_empty()
             && depth < settings.depth
             && budget > 1
             && inner.width() >= 1.0
@@ -171,14 +171,14 @@ fn split(
         });
         return;
     }
-    let base = data.node(view.parent).child_start as usize;
+    let prefix = data.child_prefix_bytes(view.parent);
     let before = if view.start == 0 {
         0
     } else {
-        data.prefix_bytes[base + view.start - 1]
+        prefix[view.start - 1]
     };
     let target = before + bytes / 2;
-    let range = &data.prefix_bytes[base + view.start..base + view.end];
+    let range = &prefix[view.start..view.end];
     let mut middle = view.start + range.partition_point(|sum| *sum < target) + 1;
     middle = middle.clamp(view.start + 1, view.end - 1);
     if middle > view.start + 1 {

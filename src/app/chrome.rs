@@ -246,7 +246,7 @@ impl App {
                     let text = if let Some(data) = &self.data {
                         format!(
                             "{} files  ·  {} folders",
-                            format_count(data.node(ROOT).file_count as usize),
+                            format_count(data.file_count(ROOT) as usize),
                             format_count(data.folder_count())
                         )
                     } else if self.error.is_some() {

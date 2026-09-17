@@ -263,7 +263,7 @@ fn render_ui_previews() {
             .await
             .unwrap();
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default())
+            .request_device(&(crate::wgpu_setup().device_descriptor)(&adapter))
             .await
             .unwrap();
         std::fs::create_dir_all("artifacts/ui").unwrap();
@@ -290,7 +290,7 @@ fn render_ui_previews() {
             };
             let mut tooltip_target = None;
             let data = app.data.clone().unwrap();
-            let selected = data.children[data.node(ROOT).child_start as usize];
+            let selected = data.child_ids(ROOT)[0];
             if state != 8 {
                 app.select_entry(&data, selected, true);
             }

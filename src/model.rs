@@ -7,16 +7,15 @@ pub const ROOT: Id = 0;
 const DIRECTORY: u8 = 1;
 const UNKNOWN_SIZE: u8 = 1;
 
-/// Exactly 32 bytes. Names and children live in contiguous, shared buffers.
+/// Exactly 24 bytes. Folder-only metadata lives in a separate, compact buffer.
+/// Names and children remain contiguous; file records carry no child counters.
 #[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Node {
     pub bytes: u64,
     pub name_offset: u32,
     pub parent: Id,
-    pub child_start: u32,
-    pub child_count: u32,
-    pub file_count: u32,
+    pub(crate) directory: u32,
     pub name_len: u16,
     kind: u8,
     flags: u8,
@@ -31,8 +30,18 @@ impl Node {
     }
 }
 
+/// Only directories need child ranges and recursive file counts (12 bytes).
+#[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
+pub(crate) struct Directory {
+    pub child_start: u32,
+    pub child_count: u32,
+    pub file_count: u32,
+}
+
 pub struct Dataset {
     pub nodes: Vec<Node>,
+    pub(crate) directories: Vec<Directory>,
     pub(crate) names: Vec<u8>,
     pub children: Vec<Id>,
     /// Inclusive prefix sums, restarted for each parent's sorted child range.
@@ -68,20 +77,34 @@ impl Dataset {
         std::str::from_utf8(&self.names[start..start + n.name_len as usize]).unwrap()
     }
     pub fn child_ids(&self, id: Id) -> &[Id] {
-        let n = self.node(id);
-        &self.children[n.child_start as usize..(n.child_start + n.child_count) as usize]
+        let Some(dir) = self.directory(id) else {
+            return &[];
+        };
+        let start = dir.child_start as usize;
+        &self.children[start..start + dir.child_count as usize]
+    }
+    fn directory(&self, id: Id) -> Option<&Directory> {
+        let node = self.node(id);
+        node.is_dir()
+            .then(|| &self.directories[node.directory as usize])
+    }
+    pub fn file_count(&self, id: Id) -> u32 {
+        self.directory(id).map_or(1, |dir| dir.file_count)
+    }
+    pub fn child_prefix_bytes(&self, id: Id) -> &[u64] {
+        let Some(dir) = self.directory(id) else {
+            return &[];
+        };
+        let start = dir.child_start as usize;
+        &self.prefix_bytes[start..start + dir.child_count as usize]
     }
     pub fn range_bytes(&self, parent: Id, start: usize, end: usize) -> u64 {
         if start == end {
             return 0;
         }
-        let base = self.node(parent).child_start as usize;
-        let before = if start == 0 {
-            0
-        } else {
-            self.prefix_bytes[base + start - 1]
-        };
-        self.prefix_bytes[base + end - 1] - before
+        let prefix = self.child_prefix_bytes(parent);
+        let before = if start == 0 { 0 } else { prefix[start - 1] };
+        prefix[end - 1] - before
     }
     pub fn path(&self, id: Id) -> String {
         if id == ROOT {
@@ -112,17 +135,19 @@ impl Dataset {
     }
     pub fn storage_bytes(&self) -> usize {
         self.nodes.capacity() * size_of::<Node>()
+            + self.directories.capacity() * size_of::<Directory>()
             + self.names.capacity()
             + self.children.capacity() * size_of::<Id>()
             + self.prefix_bytes.capacity() * size_of::<u64>()
     }
     pub fn folder_count(&self) -> usize {
-        self.nodes.len() - self.node(ROOT).file_count as usize - 1
+        self.directories.len() - 1
     }
 }
 
 pub struct Builder {
     nodes: Vec<Node>,
+    directories: Vec<Directory>,
     names: Vec<u8>,
     folders: HashMap<String, Id>,
     unknown_sizes: u64,
@@ -142,6 +167,7 @@ impl Builder {
                     .saturating_add(expected_files / 16)
                     .saturating_add(1),
             ),
+            directories: Vec::new(),
             names: Vec::with_capacity(expected_files.saturating_mul(20)),
             folders: HashMap::new(),
             unknown_sizes: 0,
@@ -165,6 +191,14 @@ impl Builder {
         if self.names.len().saturating_add(name.len()) > u32::MAX as usize {
             return Err("The filename pool exceeded 4 GiB.".into());
         }
+        let directory = if dir {
+            let index = u32::try_from(self.directories.len())
+                .map_err(|_| "The directory ID capacity has been reached.")?;
+            self.directories.push(Directory::default());
+            index
+        } else {
+            0 // Unused for files.
+        };
         self.names.extend_from_slice(name.as_bytes());
         self.nodes.push(Node {
             bytes,
@@ -173,11 +207,10 @@ impl Builder {
             parent,
             kind: if dir { DIRECTORY } else { 0 },
             flags: if unknown { UNKNOWN_SIZE } else { 0 },
-            file_count: u32::from(!dir),
-            ..Node::default()
+            directory,
         });
         if id != ROOT {
-            self.nodes[parent as usize].child_count += 1;
+            self.directories[self.nodes[parent as usize].directory as usize].child_count += 1;
         }
         self.unknown_sizes += u64::from(unknown);
         Ok(id)
@@ -248,15 +281,22 @@ impl Builder {
                 .bytes
                 .checked_add(n.bytes)
                 .ok_or("The total byte count overflowed u64.")?;
+            p.flags |= n.flags;
+            let parent_directory = p.directory as usize;
+            let files = if n.is_dir() {
+                self.directories[n.directory as usize].file_count
+            } else {
+                1
+            };
+            let p = &mut self.directories[parent_directory];
             p.file_count = p
                 .file_count
-                .checked_add(n.file_count)
+                .checked_add(files)
                 .ok_or("The file count overflowed u32.")?;
-            p.flags |= n.flags;
         }
         progress("Building child index", 0, count);
         let mut offset = 0u32;
-        for n in &mut self.nodes {
+        for n in &mut self.directories {
             n.child_start = offset;
             offset += n.child_count;
             n.child_count = 0; // Reuse as insertion cursor.
@@ -267,18 +307,18 @@ impl Builder {
                 return Err("Cancelled".into());
             }
             let parent = self.nodes[i].parent as usize;
-            let p = &mut self.nodes[parent];
+            let p = &mut self.directories[self.nodes[parent].directory as usize];
             children[(p.child_start + p.child_count) as usize] = i as Id;
             p.child_count += 1;
         }
-        progress("Sorting folders by size", 0, count);
+        progress("Sorting folders by size", 0, self.directories.len());
         let mut prefix_bytes = vec![0; children.len()];
-        for (i, n) in self.nodes.iter().enumerate() {
+        for (i, n) in self.directories.iter().enumerate() {
             if i % 65536 == 0 {
                 if cancel.load(Ordering::Relaxed) {
                     return Err("Cancelled".into());
                 }
-                progress("Sorting folders by size", i, count);
+                progress("Sorting folders by size", i, self.directories.len());
             }
             if n.child_count == 0 {
                 continue;
@@ -298,9 +338,11 @@ impl Builder {
             }
         }
         self.nodes.shrink_to_fit();
+        self.directories.shrink_to_fit();
         self.names.shrink_to_fit();
         Ok(Dataset {
             nodes: self.nodes,
+            directories: self.directories,
             names: self.names,
             children,
             prefix_bytes,
@@ -423,7 +465,8 @@ mod tests {
     use super::*;
     #[test]
     fn compact_nodes_and_exact_totals() {
-        assert_eq!(size_of::<Node>(), 32);
+        assert_eq!(size_of::<Node>(), 24);
+        assert_eq!(size_of::<Directory>(), 12);
         let mut b = Builder::default();
         let a = b.folder("C:\\Users\\Example").unwrap();
         let c = b.folder("C:\\Users\\Example\\child").unwrap();
@@ -433,10 +476,41 @@ mod tests {
             .unwrap();
         let d = b.finish(&AtomicBool::new(false), |_, _, _| {}).unwrap();
         assert_eq!(d.node(ROOT).bytes, 9_007_199_254_740_993);
-        assert_eq!(d.node(ROOT).file_count, 3);
+        assert_eq!(d.file_count(ROOT), 3);
         assert!(d.node(a).size_unknown());
         assert_eq!(d.path(c), "C:\\Users\\Example\\child");
         assert_eq!(d.range_bytes(a, 0, d.child_ids(a).len()), d.node(a).bytes);
+    }
+    #[test]
+    fn folder_metadata_stays_correct_with_interleaved_files_and_empty_folders() {
+        let mut b = Builder::default();
+        let root_file = b.add_file(ROOT, "root.bin", Some(7)).unwrap();
+        let a = b.folder("C:\\a").unwrap();
+        let first = b.add_file(a, "first", Some(11)).unwrap();
+        let empty = b.folder("C:\\empty").unwrap();
+        let nested = b.folder("C:\\a\\nested").unwrap();
+        let unknown = b.add_file(nested, "unknown", None).unwrap();
+        let last = b.add_file(a, "last", Some(13)).unwrap();
+        let d = b.finish(&AtomicBool::new(false), |_, _, _| {}).unwrap();
+        assert_eq!(d.folder_count(), 4);
+        assert_eq!(d.file_count(ROOT), 4);
+        assert_eq!(d.file_count(a), 3);
+        assert_eq!(d.file_count(nested), 1);
+        assert_eq!(d.file_count(empty), 0);
+        assert_eq!(d.child_ids(a), [last, first, nested]);
+        assert_eq!(d.child_prefix_bytes(a), [13, 24, 24]);
+        assert_eq!(d.node(ROOT).bytes, 31);
+        assert_eq!(d.node(a).bytes, 24);
+        assert!(d.node(a).size_unknown());
+        assert!(!d.node(empty).size_unknown());
+        for id in [root_file, first, unknown, last] {
+            assert_eq!(d.file_count(id), 1);
+            assert!(d.child_ids(id).is_empty());
+            assert!(d.child_prefix_bytes(id).is_empty());
+            assert_eq!(d.range_bytes(id, 0, 0), 0);
+        }
+        assert!(d.child_ids(empty).is_empty());
+        assert!(d.child_prefix_bytes(empty).is_empty());
     }
     #[test]
     fn paths_handle_unc_unicode_and_distinct_case() {

@@ -41,6 +41,12 @@ The build script runs release tests, builds explicitly for Windows x64/MSVC, and
 
 The folder/treemap icon is embedded in the executable and supplied to the app window. A standalone `everytree.ico` is included for shortcuts. The Windows SDK resource compiler is detected automatically; set `RC` to its `rc.exe` path for a custom installation. Packaged artwork and its generation prompt live in [assets/README.md](assets/README.md); Python/Pillow are only needed when regenerating the icon assets.
 
+## Memory use
+
+The renderer uses smaller GPU allocation blocks and retains geometry only for the visible treemap. File records use 24 bytes, with child ranges and recursive counts stored only for folders. Full filenames and 64-bit sizes remain available at every detail level.
+
+See [BENCHMARKS.md](BENCHMARKS.md#memory-optimization-2026-09-17) for before/after memory and timing measurements. Developers can run `.\scripts\measure-memory.ps1` after building to measure a fresh synthetic-data instance; it closes its own test instance afterward. Actual memory use varies with file count, names, resolution, DPI, and detail level.
+
 ## Dependencies
 
 The Everything SDK is supplied by voidtools; consult its bundled source headers for its license. Application code is MIT licensed. Rust dependency versions are pinned in `Cargo.lock`.

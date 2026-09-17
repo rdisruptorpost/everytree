@@ -260,24 +260,24 @@ mod tests {
     }
     #[test]
     fn unchanged_pages_include_every_file_once() {
-        assert_eq!(capture(0).node(0).file_count, 24);
+        assert_eq!(capture(0).file_count(0), 24);
     }
     #[test]
     fn insertion_before_cursor_does_not_duplicate_or_abort() {
         let d = capture(1);
-        assert_eq!(d.node(0).file_count, 24);
+        assert_eq!(d.file_count(0), 24);
         assert_eq!(d.node(0).bytes, 240);
     }
     #[test]
     fn deletion_before_cursor_does_not_skip_unread_entries() {
-        assert_eq!(capture(2).node(0).file_count, 24);
+        assert_eq!(capture(2).file_count(0), 24);
     }
     #[test]
     fn deleted_last_anchor_resumes_from_survivor() {
-        assert_eq!(capture(3).node(0).file_count, 24);
+        assert_eq!(capture(3).file_count(0), 24);
     }
     #[test]
     fn insertion_ahead_of_cursor_is_included() {
-        assert_eq!(capture(4).node(0).file_count, 25);
+        assert_eq!(capture(4).file_count(0), 25);
     }
 }

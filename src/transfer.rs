@@ -1,6 +1,6 @@
 //! A process boundary keeps synchronous SDK calls cancellable, even if the
 //! Everything client stops responding inside a Windows SendMessage call.
-use crate::model::{Dataset, LoadStats, Node};
+use crate::model::{Dataset, Directory, LoadStats, Node};
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::process::{Command, Stdio};
 use std::sync::{
@@ -159,7 +159,7 @@ fn read_string(r: &mut impl Read) -> io::Result<String> {
     String::from_utf8(read_vector(r, 1_048_576)?).map_err(|_| invalid())
 }
 fn write_dataset(w: &mut impl Write, data: &Dataset) -> io::Result<()> {
-    w.write_all(b"ETR2")?;
+    w.write_all(b"ETR3")?;
     write_string(w, &data.source)?;
     write_string(w, &data.query)?;
     write_u64(w, data.elapsed.as_micros() as u64)?;
@@ -168,6 +168,7 @@ fn write_dataset(w: &mut impl Write, data: &Dataset) -> io::Result<()> {
     w.write_all(bytemuck::bytes_of(&data.load_stats))?;
     write_string(w, &data.capture_note)?;
     write_vector(w, &data.nodes)?;
+    write_vector(w, &data.directories)?;
     write_vector(w, &data.names)?;
     write_vector(w, &data.children)?;
     write_vector(w, &data.prefix_bytes)
@@ -175,7 +176,7 @@ fn write_dataset(w: &mut impl Write, data: &Dataset) -> io::Result<()> {
 fn read_dataset(r: &mut impl Read) -> io::Result<Dataset> {
     let mut magic = [0; 4];
     r.read_exact(&mut magic)?;
-    if &magic != b"ETR2" {
+    if &magic != b"ETR3" {
         return Err(invalid());
     }
     let source = read_string(r)?;
@@ -187,6 +188,7 @@ fn read_dataset(r: &mut impl Read) -> io::Result<Dataset> {
     r.read_exact(bytemuck::bytes_of_mut(&mut load_stats))?;
     let capture_note = read_string(r)?;
     let nodes: Vec<Node> = read_vector(r, u32::MAX as u64)?;
+    let directories: Vec<Directory> = read_vector(r, nodes.len() as u64)?;
     let names = read_vector(r, u32::MAX as u64)?;
     let children = read_vector(r, nodes.len().saturating_sub(1) as u64)?;
     let prefix_bytes = read_vector(r, children.len() as u64)?;
@@ -194,8 +196,20 @@ fn read_dataset(r: &mut impl Read) -> io::Result<Dataset> {
     {
         return Err(invalid());
     }
+    if directories.is_empty()
+        || !nodes[0].is_dir()
+        || nodes
+            .iter()
+            .any(|n| n.is_dir() && n.directory as usize >= directories.len())
+        || directories
+            .iter()
+            .any(|dir| dir.child_start as usize + dir.child_count as usize > children.len())
+    {
+        return Err(invalid());
+    }
     Ok(Dataset {
         nodes,
+        directories,
         names,
         children,
         prefix_bytes,
@@ -261,6 +275,30 @@ pub fn peak_working_set() -> Option<usize> {
 mod tests {
     use super::*;
     #[test]
+    fn transfer_handles_empty_index_and_rejects_invalid_directory_metadata() {
+        let mut data = crate::model::Builder::default()
+            .finish(&AtomicBool::new(false), |_, _, _| {})
+            .unwrap();
+        let mut encoded = Vec::new();
+        write_dataset(&mut encoded, &data).unwrap();
+        let copy = read_dataset(&mut &encoded[..]).unwrap();
+        assert_eq!(copy.file_count(0), 0);
+        assert_eq!(copy.folder_count(), 0);
+        assert!(copy.child_ids(0).is_empty());
+        encoded[..4].copy_from_slice(b"ETR2");
+        assert!(read_dataset(&mut &encoded[..]).is_err());
+
+        data.nodes[0].directory = u32::MAX;
+        encoded.clear();
+        write_dataset(&mut encoded, &data).unwrap();
+        assert!(read_dataset(&mut &encoded[..]).is_err());
+        data.nodes[0].directory = 0;
+        data.directories[0].child_count = 1;
+        encoded.clear();
+        write_dataset(&mut encoded, &data).unwrap();
+        assert!(read_dataset(&mut &encoded[..]).is_err());
+    }
+    #[test]
     fn transfer_preserves_hierarchy_and_rejects_truncation() {
         let data =
             crate::model::synthetic(500, false, &AtomicBool::new(false), |_, _, _| {}).unwrap();
@@ -271,6 +309,9 @@ mod tests {
         assert_eq!(copy.children, data.children);
         for id in 0..copy.nodes.len() as u32 {
             assert_eq!(copy.path(id), data.path(id));
+            assert_eq!(copy.file_count(id), data.file_count(id));
+            assert_eq!(copy.child_ids(id), data.child_ids(id));
+            assert_eq!(copy.child_prefix_bytes(id), data.child_prefix_bytes(id));
         }
         assert!(read_dataset(&mut &encoded[..encoded.len() - 1]).is_err());
     }

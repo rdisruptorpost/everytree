@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "Source: {}\nFiles: {}\nFolders: {}\nLogical bytes: {}\nUnknown sizes: {}\nLoad time: {:.3}s\nData buffers: {} ({} bytes)",
             data.source,
-            format_count(data.node(ROOT).file_count as usize),
+            format_count(data.file_count(ROOT) as usize),
             format_count(data.folder_count()),
             data.node(ROOT).bytes,
             data.unknown_sizes,
@@ -163,6 +163,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .with_inner_size([1400.0, 900.0])
             .with_min_inner_size([940.0, 600.0]),
         renderer: eframe::Renderer::Wgpu,
+        wgpu_options: eframe::egui_wgpu::WgpuConfiguration {
+            wgpu_setup: wgpu_setup().into(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     eframe::run_native(
@@ -171,4 +175,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Box::new(move |cc| Ok(Box::new(app::App::new(cc, source)))),
     )?;
     Ok(())
+}
+
+/// Keep egui's adapter limits and backend choices, but avoid its default large
+/// allocation blocks. Our on-demand 2D renderer retains only visible geometry.
+fn wgpu_setup() -> eframe::egui_wgpu::WgpuSetupCreateNew {
+    let mut setup = eframe::egui_wgpu::WgpuSetupCreateNew::default();
+    let default_descriptor = setup.device_descriptor.clone();
+    setup.device_descriptor = std::sync::Arc::new(move |adapter| {
+        let mut descriptor = default_descriptor(adapter);
+        descriptor.memory_hints = eframe::wgpu::MemoryHints::MemoryUsage;
+        descriptor
+    });
+    setup
 }

@@ -2,6 +2,61 @@
 
 Windows x64, optimized release builds, Everything 1.4.1.1026. These numbers are specific to this machine and index.
 
+## Memory optimization (2026-09-17)
+
+Compared the unmodified 0.3.8 checkout against the memory changes using the same pinned Rust 1.98.1 release configuration on this Windows system. These are local measurements, not cross-machine guarantees.
+
+Changes:
+
+- Select wgpu's `MemoryHints::MemoryUsage` while preserving egui's device limits, adapter selection, cached rendering, and tile budgets. In the pinned wgpu-hal 27.0.4 DX12 backend this changes device/host allocation blocks from 256/64 MiB to 8/4 MiB. These are allocation granularity, not memory caps; larger resources still work.
+- File records shrink from 32 to 24 bytes. Only folders have a separate 12-byte child-range/file-count record. Savings are approximately 8 bytes per file minus 4 bytes per folder (including the root). Names, 64-bit sizes, prefix sums, and constant-time range totals remain intact. The worker's private transfer protocol is updated to carry the compact representation.
+
+### Idle application
+
+Identical `--demo 1000000` views, default Fine detail, default window size and system DPI. Baseline and optimized instances were launched sequentially, allowed to settle for 8 seconds, then sampled three times. Values below are medians; GPU counters sum the test PID's adapter instances.
+
+| Counter | Before | After |
+|---|---:|---:|
+| Dedicated GPU memory | 357.8 MiB | 117.7 MiB |
+| Shared GPU memory | 102.9 MiB | 49.1 MiB |
+| Process working set | 260.0 MiB | 203.2 MiB |
+| Process private bytes (committed memory) | 571.3 MiB | 267.2 MiB |
+
+Dedicated GPU memory fell by about 67%. Windows GPU and process counters measure different things and can overlap; do not add them together. Window resolution, DPI, drivers, selected adapter, navigation history, and detail level affect the result. Working set is resident process memory; private bytes are not another measure of physical RAM in use.
+
+### CPU/data comparison
+
+Three runs per build and dataset, alternating build order without overlapping benchmark processes. Each run builds the layout 100 times per detail at 1600 by 900 and depth 32. Table entries are medians across the three runs (including the per-run p50/p95 statistics). Peaks also include the headless layout, mesh, text, and tessellation work.
+
+| Measurement | Before | After |
+|---|---:|---:|
+| 10 million, mixed: data buffers | 582.7 MiB | 506.5 MiB |
+| 10 million, mixed: peak headless working set | 639.8 MiB | 563.1 MiB |
+| 10 million, mixed: generate/build time | 1.221 s | 1.216 s |
+| 10 million, mixed: Balanced layout p50 / p95 | 1.13 / 1.30 ms | 1.21 / 2.22 ms |
+| 10 million, mixed: Fine layout p50 / p95 | 48.11 / 56.85 ms | 48.26 / 52.41 ms |
+| 10 million, mixed: Pixel layout p50 / p95 | 132.21 / 155.47 ms | 131.65 / 140.96 ms |
+| 1 million, flat: data buffers | 58.1 MiB | 50.4 MiB |
+| 1 million, flat: peak headless working set | 119.4 MiB | 111.7 MiB |
+| 1 million, flat: generate/build time | 0.168 s | 0.152 s |
+| 1 million, flat: Balanced layout p50 / p95 | 12.16 / 13.11 ms | 12.48 / 13.74 ms |
+| 1 million, flat: Fine layout p50 / p95 | 31.78 / 36.76 ms | 31.78 / 33.95 ms |
+| 1 million, flat: Pixel layout p50 / p95 | 59.20 / 67.87 ms | 56.85 / 59.39 ms |
+
+Fine and Pixel CPU layout times remain close to baseline. The small Balanced case has a higher p95 by less than 1 ms; these measurements do not establish GPU frame throughput or performance on other adapters. All compared runs preserve total bytes, visible tile counts, individual-file/group counts, visited ranges, and geometry size. The GPU-rendered README fixture is pixel-identical to the existing screenshot.
+
+Validation: formatting and Clippy (`-D warnings`) pass, along with 23 tests and the opt-in GPU preview test. A read-only Everything import of the repository captured 12,782 files and 2,123 folders, including 24 unknown-size files, and completed the new worker transfer successfully.
+
+Reproduce after building; pipe the GUI executable's output so PowerShell waits for headless benchmarks:
+
+```powershell
+.\scripts\measure-memory.ps1 -Executable .\dist\everytree.exe -Files 1000000
+.\dist\everytree.exe --bench 10000000 | Out-Host
+.\dist\everytree.exe --bench 1000000 --flat | Out-Host
+```
+
+The measurement helper starts a fresh synthetic-data instance, reports byte counters, and closes only that instance. It does not query Everything. GPU fields are empty when the Windows counters are unavailable. Raw measurements are local/ignored in `artifacts/memory/final-*.txt` and `artifacts/memory/*-gpu-final.json`.
+
 ## v0.3 granular treemap
 
 Live index: 8,953,142 files / 1,091,789 derived folders, 626.8 MiB data buffers, imported in 9.346 s. All detail modes used the same captured data at 1600 by 900, depth 32.
